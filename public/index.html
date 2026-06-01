@@ -1,7 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-version="1780332815">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="pragma" content="no-cache">
+<meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>RADIO TIME MACHINE - 时光广播机</title>
 <style>
@@ -149,9 +151,9 @@
   </div>
 
   <div class="episodes-grid" id="episodesGrid">
-    <div class="episode-card loading"><div class="badge">A</div><div class="card-title">加载中...</div></div>
-    <div class="episode-card loading"><div class="badge">B</div><div class="card-title">加载中...</div></div>
-    <div class="episode-card loading"><div class="badge">C</div><div class="card-title">加载中...</div></div>
+    <div class="episode-card"><div class="badge">A</div><div class="card-title">请选年份</div></div>
+    <div class="episode-card"><div class="badge">B</div><div class="card-title">请选年份</div></div>
+    <div class="episode-card"><div class="badge">C</div><div class="card-title">请选年份</div></div>
   </div>
 
   <div class="controls">
@@ -190,7 +192,7 @@
 <script>
 const state = {
   year: 1960, episodes: [], selectedEpisode: null,
-  currentContent: null, isPlaying: false, volume: 0.7,
+  currentContent: null, isPlaying: false, volume: 0.7, _musicTimer: null,
   synth: window.speechSynthesis, utterance: null, isGenerating: false
 };
 const $ = id => document.getElementById(id);
@@ -358,7 +360,7 @@ function updatePlayUI() {
 
 function setStatus(msg) { $('statusMsg').textContent = msg; }
 
-async function loadYear(year, force) {
+async function loadYear(year) {
   state.year = year; state.selectedEpisode = null; state.currentContent = null;
   $('displayYear').textContent = year; $('yearDisplay').textContent = year;
   $('yearSlider').value = year; $('yearIndicator').textContent = '📻 '+year;
@@ -372,21 +374,56 @@ async function loadYear(year, force) {
   $('displayStatus').textContent = '记忆追溯中……';
 
   try {
-    var url = '/api/broadcast?year='+year + (force ? '&force=1' : '');
+    var url = '/api/broadcast?year='+year;
     var res = await fetch(url);
     var d = await res.json();
     if (d.error) { setStatus('❌ '+d.error); $('displayYear').classList.remove('loading'); return; }
     
-    state.episodes = d.episodes || [];
-    renderEpisodes(state.episodes);
-    $('displayYear').classList.remove('loading');
-    $('displayStatus').textContent = year+' 年 · '+state.episodes.length+' 期节目';
-    setStatus(d.cached ? '📡 '+state.episodes.length+' 期' : '✨ 已生成');
-    
-    if (state.episodes.length > 0) selectEpisode(state.episodes[0].episode_id);
+    if (d.episodes && d.episodes.length >= 3) {
+      state.episodes = d.episodes;
+      renderEpisodes(state.episodes);
+      $('displayYear').classList.remove('loading');
+      $('displayStatus').textContent = year+' 年 · '+state.episodes.length+' 期节目';
+      setStatus(d.cached ? '📡 '+state.episodes.length+' 期' : '✨ 已生成');
+      if (state.episodes.length > 0) selectEpisode(state.episodes[0].episode_id);
+    } else {
+      // Generation might be in progress - poll for it
+      await pollGeneration(year);
+    }
   } catch(e) {
-    setStatus('❌ 连接失败'); $('displayYear').classList.remove('loading');
+    // Fetch failed (tab was backgrounded etc.) - check status instead
+    console.warn('Fetch failed, polling status:', e.message);
+    await pollGeneration(year);
   }
+}
+
+async function pollGeneration(year) {
+  // Poll /api/status until generation is done, or timeout after 5 min
+  var maxAttempts = 30;
+  for (var i = 0; i < maxAttempts; i++) {
+    try {
+      var statusRes = await fetch('/api/status?year='+year);
+      var status = await statusRes.json();
+      if (status.episodes >= 3) {
+        // Generation complete, fetch the data
+        var dataRes = await fetch('/api/broadcast?year='+year);
+        var data = await dataRes.json();
+        if (data.episodes && data.episodes.length >= 3) {
+          state.episodes = data.episodes;
+          renderEpisodes(state.episodes);
+          $('displayYear').classList.remove('loading');
+          $('displayStatus').textContent = year+' 年 · '+state.episodes.length+' 期节目';
+          setStatus('✨ 已生成');
+          if (state.episodes.length > 0) selectEpisode(state.episodes[0].episode_id);
+          return;
+        }
+      }
+    } catch(e) {/* retry */}
+    // Wait 10 seconds before next check
+    await new Promise(function(r) { setTimeout(r, 10000); });
+  }
+  setStatus('❌ 连接失败');
+  $('displayYear').classList.remove('loading');
 }
 
 function renderEpisodes(eps) {
@@ -403,16 +440,40 @@ function renderEpisodes(eps) {
 
 async function selectEpisode(eid) {
   state.selectedEpisode = eid;
-  $('episodesGrid').querySelectorAll('.episode-card').forEach(c => 
-    c.classList.toggle('active', c.dataset.ep === eid));
+  $('episodesGrid').querySelectorAll('.episode-card').forEach(function(c) { 
+    c.classList.toggle('active', c.dataset.ep === eid);
+  });
+  
+  // Clear any existing music poll timer
+  if (state._musicTimer) { clearInterval(state._musicTimer); state._musicTimer = null; }
+  
   try {
-    const res = await fetch(`/api/episode?year=${state.year}&id=${eid}`);
-    const d = await res.json();
+    var res = await fetch('/api/episode?year='+state.year+'&id='+eid);
+    var d = await res.json();
     if (d.error) return;
     state.currentContent = d.episode.content;
     renderContent(d.episode.content);
-    $('displayStatus').textContent = `${state.year} · ${d.episode.title}`;
-    setStatus(`📻 ${d.episode.title}`);
+    $('displayStatus').textContent = state.year+' · '+d.episode.title;
+    setStatus('📻 '+d.episode.title);
+    
+    // If music is still searching, poll for it
+    if (!d.episode.content.musicSearch && d.episode.content.music) {
+      var attempts = 0;
+      state._musicTimer = setInterval(async function() {
+        attempts++;
+        if (attempts > 6) { clearInterval(state._musicTimer); state._musicTimer = null; return; }
+        try {
+          var r2 = await fetch('/api/episode?year='+state.year+'&id='+eid);
+          var d2 = await r2.json();
+          if (d2.episode.content.musicSearch) {
+            state.currentContent = d2.episode.content;
+            renderContent(d2.episode.content);
+            clearInterval(state._musicTimer);
+            state._musicTimer = null;
+          }
+        } catch(e) {}
+      }, 3000);
+    }
   } catch(e) { setStatus('❌ 加载失败'); }
 }
 
@@ -446,30 +507,45 @@ function renderContent(c) {
 
 function playMusic(url, name) {
   if (audioPlayer) { audioPlayer.pause(); audioPlayer = null; }
-  var audio = new Audio(url);
-  audio.volume = state.volume;
-  audio.onplay = function() {
-    $('btnMusicPlay').textContent = '⏸ 暂停';
-    $('btnMusicPlay').classList.add('playing');
-    $('musicStatus').textContent = '播放中';
-  };
-  audio.onended = function() {
-    $('btnMusicPlay').textContent = '▶ 播放';
-    $('btnMusicPlay').classList.remove('playing');
-    $('musicStatus').textContent = '播放完毕';
-    audioPlayer = null;
-  };
-  audio.onerror = function() {
-    $('btnMusicPlay').textContent = '▶ 播放';
-    $('btnMusicPlay').classList.remove('playing');
-    $('musicStatus').textContent = '无法播放';
-    audioPlayer = null;
-  };
-  audio.play().catch(function(e) {
-    $('musicStatus').textContent = '播放失败';
-    audioPlayer = null;
+  
+  // Append song name for fallback search
+  var playUrl = url + '&q=' + encodeURIComponent(name);
+  
+  // First check if the song is playable
+  fetch(playUrl, { method: 'HEAD' }).then(function(r) {
+    if (!r.ok) {
+      $('musicStatus').textContent = r.status === 403 ? '⚠️ 需VIP' : '⚠️ 无法播放';
+      return;
+    }
+    var audio = new Audio(playUrl);
+    audio.volume = state.volume;
+    audio.onplay = function() {
+      $('btnMusicPlay').textContent = '⏸ 暂停';
+      $('btnMusicPlay').classList.add('playing');
+      $('musicStatus').textContent = '播放中';
+    };
+    audio.onended = function() {
+      $('btnMusicPlay').textContent = '▶ 播放';
+      $('btnMusicPlay').classList.remove('playing');
+      $('musicStatus').textContent = '播放完毕';
+      audioPlayer = null;
+    };
+    audio.onerror = function() {
+      $('musicStatus').textContent = '⚠️ 无法播放';
+      $('btnMusicPlay').textContent = '▶ 播放';
+      $('btnMusicPlay').classList.remove('playing');
+      audioPlayer = null;
+    };
+    audio.play().catch(function() {
+      $('musicStatus').textContent = '⚠️ 需要VIP';
+      $('btnMusicPlay').textContent = '▶ 播放';
+      $('btnMusicPlay').classList.remove('playing');
+      audioPlayer = null;
+    });
+    audioPlayer = audio;
+  }).catch(function() {
+    $('musicStatus').textContent = '⚠️ 无法播放';
   });
-  audioPlayer = audio;
 }
 
 function stopMusic() {
@@ -507,6 +583,8 @@ function playCurrentMusic() {
 function showMusicBar(name, url) {
   $('musicName').textContent = '《'+name+'》';
   $('musicBar').classList.add('show');
+  // Store song name for proxy fallback
+  $('musicBar').dataset.songName = name;
 }
 
 $('yearSlider').addEventListener('input', function() {
@@ -565,7 +643,7 @@ $('btnGenerate').addEventListener('click', async function() {
   this.textContent = '⏳ 记忆追溯中……';
   stopSpeaking();
   // Add ?force=1 to bypass cache
-  await loadYear(state.year, true);
+  await loadYear(state.year);
   state.isGenerating = false;
   this.disabled = false;
   this.innerHTML = '<span class="btn-icon">⟳</span> 重新生成';
@@ -605,7 +683,12 @@ document.addEventListener('click', function() {
 }, { once: false });
 
 $('powerLight').classList.add('on');
-loadYear(1960);
+
+// Don't auto-load any year - wait for user interaction
+$('displayYear').textContent = '----';
+$('displayStatus').textContent = '🎛️ 请选择年份，转动拨盘或滑动选择器';
+setStatus('🎛️ 选择年份，开始时光之旅');
+$('yearIndicator').textContent = '📻 请选择';
 </script>
 </body>
 </html>
