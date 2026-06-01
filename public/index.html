@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RADIO TIME MACHINE - 时光广播机</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at center,#2c1810 0%,#1a0e08 60%,#0d0704 100%);
+    font-family:'Georgia','Songti SC',serif;padding:20px
+  }
+  .radio{
+    width:800px;max-width:100%;
+    background:linear-gradient(145deg,#5c3a1e,#3d2413);
+    border-radius:40px 40px 50px 50px;padding:25px 28px 30px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.8),inset 0 2px 4px rgba(255,200,120,0.1),inset 0 -3px 8px rgba(0,0,0,0.5);
+    border:3px solid #2a1a0c;position:relative
+  }
+  .speaker-area{
+    background:linear-gradient(180deg,#1a0e08,#0d0704);border-radius:16px;padding:14px;
+    margin-bottom:14px;border:2px solid #4a2e16;box-shadow:inset 0 4px 12px rgba(0,0,0,0.7)
+  }
+  .grille{display:flex;gap:5px;justify-content:center}
+  .grille-bar{width:7px;height:60px;background:linear-gradient(180deg,#3d2413,#5c3a1e,#3d2413);border-radius:3px}
+  .display-panel{
+    background:linear-gradient(135deg,#1a1208,#0f0a04);border:3px solid #6b4a28;
+    border-radius:10px;padding:10px 14px;margin-bottom:14px;box-shadow:inset 0 2px 10px rgba(0,0,0,0.8)
+  }
+  .display-top{display:flex;align-items:baseline;justify-content:space-between}
+  .display-year{font-size:42px;font-weight:bold;color:#ffd700;text-shadow:0 0 20px rgba(255,215,0,0.3);letter-spacing:3px}
+  .display-year.loading{opacity:0.3;animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{opacity:0.3}50%{opacity:0.8}}
+  .display-status{font-size:13px;color:#a08050;letter-spacing:1px}
+  .year-selector{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .year-slider{-webkit-appearance:none;appearance:none;flex:1;height:6px;
+    background:linear-gradient(90deg,#3d2413,#8b6b3a);border-radius:3px;outline:none}
+  .year-slider::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;
+    background:radial-gradient(circle,#c4a860,#8b6b3a);border-radius:50%;cursor:pointer;
+    border:2px solid #2a1a0c;box-shadow:0 2px 6px rgba(0,0,0,0.4)}
+  .year-slider::-moz-range-thumb{width:22px;height:22px;
+    background:radial-gradient(circle,#c4a860,#8b6b3a);border-radius:50%;cursor:pointer;border:2px solid #2a1a0c}
+  .year-display-current{font-size:28px;color:#ffd700;min-width:60px;text-align:center;font-family:'Georgia',serif;letter-spacing:2px}
+  
+  .episodes-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px}
+  .episode-card{
+    background:linear-gradient(180deg,#2a1a0c,#1a0e08);border:2px solid #4a2e16;
+    border-radius:12px;padding:14px;cursor:pointer;transition:all 0.2s;text-align:center;position:relative
+  }
+  .episode-card:hover{border-color:#c4a860;background:linear-gradient(180deg,#3a2814,#2a1a0c);transform:translateY(-2px)}
+  .episode-card.active{border-color:#ffd700;box-shadow:0 0 20px rgba(255,215,0,0.15)}
+  .episode-card .badge{
+    display:inline-block;background:#5c3a1e;color:#ffd700;font-size:11px;
+    padding:2px 10px;border-radius:10px;margin-bottom:6px;letter-spacing:1px
+  }
+  .episode-card.active .badge{background:#8b6b20}
+  .episode-card .card-title{color:#e8d5b0;font-size:14px;font-weight:bold;margin-bottom:4px;line-height:1.3}
+  .episode-card .card-focus{color:#8b7a60;font-size:12px;line-height:1.4}
+  .episode-card .card-plays{color:#5a4a30;font-size:10px;margin-top:6px}
+  .episode-card.loading{opacity:0.5;pointer-events:none}
+  .episode-card.loading::after{content:'⏳';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:24px}
+
+  .controls{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .btn{
+    padding:8px 22px;border:2px solid #4a2e16;border-radius:30px;
+    background:linear-gradient(180deg,#6b4a28,#3d2413);color:#e8d5b0;font-size:14px;
+    font-family:'Georgia',serif;cursor:pointer;letter-spacing:1px;
+    box-shadow:0 3px 8px rgba(0,0,0,0.4),inset 0 1px 0 rgba(255,200,120,0.1);transition:all 0.15s
+  }
+  .btn:hover{background:linear-gradient(180deg,#7d5a30,#4d2e16);color:#fff}
+  .btn:active{transform:scale(0.96)}
+  .btn:disabled{opacity:0.4;cursor:not-allowed}
+  .btn-play{background:linear-gradient(180deg,#8b2020,#5a1010);border-color:#6a2020}
+  .btn-play:hover{background:linear-gradient(180deg,#a52828,#6a1414)}
+  .btn-play.playing{background:linear-gradient(180deg,#1a5a1a,#0d3d0d);border-color:#2a6a2a}
+  .btn-icon{margin-right:4px}
+  .volume-control{display:flex;align-items:center;gap:6px;margin-left:auto}
+  .volume-control label{color:#8b7a60;font-size:12px}
+  .volume-slider{-webkit-appearance:none;appearance:none;width:70px;height:4px;background:#3d2413;border-radius:2px;outline:none}
+  .volume-slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;
+    background:#c4a860;border-radius:50%;cursor:pointer;border:2px solid #2a1a0c}
+
+  .content-area{
+    background:linear-gradient(135deg,#1a1208,#0f0a04);border:2px solid #4a2e16;
+    border-radius:10px;padding:12px 14px;min-height:70px;max-height:160px;overflow-y:auto;
+    box-shadow:inset 0 2px 6px rgba(0,0,0,0.6)
+  }
+  .content-area::-webkit-scrollbar{width:4px}
+  .content-area::-webkit-scrollbar-thumb{background:#4a2e16;border-radius:2px}
+  .content-text{color:#d4c4a0;font-size:13px;line-height:1.7;letter-spacing:0.3px}
+  .content-text .news-item{display:block;padding:1px 0;font-size:13px}
+  .content-text .news-item::before{content:'▸ ';color:#c4a860}
+  .content-text .music-item{display:block;padding:1px 0;color:#e8c888;font-size:13px}
+  .content-text .music-item::before{content:'♪ ';color:#ffd700}
+  .content-text .closing-text{display:block;margin-top:6px;color:#a08050;font-style:italic;font-size:12px}
+  .content-placeholder{color:#8b7a60;text-align:center;font-style:italic;padding:15px 0;font-size:14px}
+
+  .music-bar{
+    background:linear-gradient(90deg,#2a1a0c,#1a0e08);border:1px solid #4a2e16;
+    border-radius:8px;padding:6px 10px;margin-bottom:8px;display:none;
+    align-items:center;gap:8px;min-height:36px
+  }
+  .music-bar.show{display:flex}
+  .music-bar .music-icon{color:#ffd700;font-size:14px}
+  .music-bar .music-name{color:#e8d5b0;font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .music-bar .music-status{color:#6b5a40;font-size:10px;min-width:50px;text-align:right}
+  .btn-music{padding:3px 12px;border:1px solid #4a2e16;border-radius:20px;
+    background:linear-gradient(180deg,#5c3a1e,#3d2413);color:#e8d5b0;font-size:11px;
+    cursor:pointer;font-family:'Georgia',serif;transition:all 0.15s;flex-shrink:0}
+  .btn-music:hover{background:linear-gradient(180deg,#7d5a30,#4d2e16);color:#fff}
+  .btn-music.playing{background:linear-gradient(180deg,#1a5a1a,#0d3d0d);border-color:#2a6a2a}
+
+  .status-bar{display:flex;align-items:center;gap:12px;margin-top:8px;padding-top:8px;border-top:1px solid #3d2413}
+  .indicator{display:flex;align-items:center;gap:4px;font-size:11px;color:#6b5a40}
+  .indicator-light{width:7px;height:7px;border-radius:50%;background:#3d2413;transition:all 0.3s}
+  .indicator-light.on{background:#44ff44;box-shadow:0 0 6px #44ff44}
+  .indicator-light.playing{background:#ff4444;box-shadow:0 0 6px #ff4444;animation:blink 1.2s infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+  .status-msg{margin-left:auto;font-size:11px;color:#6b5a40}
+
+  @media(max-width:700px){
+    .radio{padding:18px}
+    .episodes-grid{grid-template-columns:1fr;gap:8px}
+    .display-year{font-size:32px}
+    .year-display-current{font-size:22px;min-width:40px}
+    .controls{flex-wrap:wrap}
+    .volume-control{margin-left:0}
+  }
+</style>
+</head>
+<body>
+
+<div class="radio">
+  <div class="speaker-area"><div class="grille" id="grille"></div></div>
+
+  <div class="display-panel">
+    <div class="display-top">
+      <div class="display-year" id="displayYear">1960</div>
+      <div class="display-status" id="displayStatus">选择年份，开始时光之旅</div>
+    </div>
+  </div>
+
+  <div class="year-selector">
+    <button class="btn" id="btnPrev">◀</button>
+    <input type="range" class="year-slider" id="yearSlider" min="1950" max="2025" value="1960">
+    <button class="btn" id="btnNext">▶</button>
+    <div class="year-display-current" id="yearDisplay">1960</div>
+  </div>
+
+  <div class="episodes-grid" id="episodesGrid">
+    <div class="episode-card loading"><div class="badge">A</div><div class="card-title">加载中...</div></div>
+    <div class="episode-card loading"><div class="badge">B</div><div class="card-title">加载中...</div></div>
+    <div class="episode-card loading"><div class="badge">C</div><div class="card-title">加载中...</div></div>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn-play" id="btnPlay"><span class="btn-icon">▶</span> <span id="playLabel">播放</span></button>
+    <button class="btn" id="btnStop"><span class="btn-icon">■</span> 停止</button>
+    <button class="btn" id="btnGenerate"><span class="btn-icon">⟳</span> 重新生成</button>
+    <div class="volume-control">
+      <label>🔊</label>
+      <input type="range" class="volume-slider" id="volumeSlider" min="0" max="1" step="0.05" value="0.7">
+    </div>
+  </div>
+
+  <div class="content-area">
+    <div class="content-text" id="contentText">
+      <div class="content-placeholder">🎵 选择年份，挑一期节目，点击播放</div>
+    </div>
+  </div>
+
+  <!-- Music Player Bar -->
+  <div class="music-bar" id="musicBar">
+    <span class="music-icon">♫</span>
+    <span class="music-name" id="musicName">—</span>
+    <button class="btn-music" id="btnMusicPlay">▶ 播放</button>
+    <button class="btn-music" id="btnMusicStop">■ 停止</button>
+    <span class="music-status" id="musicStatus"></span>
+  </div>
+
+  <div class="status-bar">
+    <div class="indicator"><span class="indicator-light" id="powerLight"></span> 电源</div>
+    <div class="indicator"><span class="indicator-light" id="signalLight"></span> 信号</div>
+    <div class="indicator" id="yearIndicator">📻 1960</div>
+    <div class="status-msg" id="statusMsg">就绪</div>
+  </div>
+</div>
+
+<script>
+const state = {
+  year: 1960, episodes: [], selectedEpisode: null,
+  currentContent: null, isPlaying: false, volume: 0.7,
+  synth: window.speechSynthesis, utterance: null, isGenerating: false
+};
+const $ = id => document.getElementById(id);
+
+function buildGrille() {
+  const g = $('grille');
+  const n = Math.floor((g.parentElement.offsetWidth - 28) / 14) || 35;
+  for (let i = 0; i < n; i++) {
+    const b = document.createElement('div');
+    b.className = 'grille-bar';
+    b.style.height = (45 + Math.random() * 30) + 'px';
+    g.appendChild(b);
+  }
+}
+buildGrille();
+
+function speak(text) {
+  stopSpeaking();
+  if (!text || text.length < 10) { setStatus('❌ 没有可播放的内容'); return; }
+  
+  var clean = text.replace(/[*【】\[\]]/g, '');
+  setStatus('🔊 正在合成语音...');
+  
+  // Try server-side TTS first
+  serverTTS(clean);
+}
+
+function serverTTS(text) {
+  // Stop any existing audio
+  if (ttsPlayer) { ttsPlayer.pause(); ttsPlayer = null; }
+  
+  // Unlock audio context (required by some browsers)
+  if (window.audioCtx && window.audioCtx.state === 'suspended') {
+    window.audioCtx.resume();
+  }
+  
+  fetch('/api/tts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: text })
+  })
+  .then(function(res) {
+    if (!res.ok) {
+      return res.json().then(function(d) {
+        throw new Error(d.error || 'TTS不可用');
+      });
+    }
+    return res.blob();
+  })
+  .then(function(blob) {
+    var url = URL.createObjectURL(blob);
+    var audio = new Audio(url);
+    audio.volume = state.volume;
+    
+    audio.onplay = function() {
+      state.isPlaying = true;
+      updatePlayUI();
+      setStatus('🔊 广播中...');
+    };
+    audio.onended = function() {
+      state.isPlaying = false;
+      updatePlayUI();
+      setStatus('✅ 播放完毕');
+      URL.revokeObjectURL(url);
+    };
+    audio.onerror = function(e) {
+      console.warn('Audio error:', e.message || 'unknown');
+      state.isPlaying = false;
+      updatePlayUI();
+      URL.revokeObjectURL(url);
+      // Fall back to browser TTS
+      browserTTS(text);
+    };
+    
+    ttsPlayer = audio;
+    // Play with user gesture handling
+    var playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(function(err) {
+        setStatus('⚠️ 播放失败，试试浏览器语音');
+        console.error('TTS audio play error:', err);
+        browserTTS(text);
+      });
+    }
+  })
+  .catch(function(err) {
+    setStatus('⚠️ 服务器语音暂不可用，使用浏览器语音');
+    console.error('TTS server error:', err);
+    browserTTS(text);
+  });
+}
+
+function browserTTS(text) {
+  if (!window.speechSynthesis) {
+    setStatus('❌ 语音不可用');
+    showFallbackText(text);
+    return;
+  }
+  try {
+    var u = new SpeechSynthesisUtterance(text);
+    u.lang = 'zh-CN'; u.rate = 0.9; u.volume = state.volume;
+    var voices = speechSynthesis.getVoices();
+    var zh = voices.find(function(v) { return v.lang.includes('zh'); });
+    if (zh) u.voice = zh;
+    var iOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    u.onstart = function() { state.isPlaying = true; updatePlayUI(); setStatus('🔊 浏览器语音中...'); };
+    u.onend = function() { state.isPlaying = false; updatePlayUI(); setStatus('✅ 播放完毕'); };
+    u.onerror = function() { state.isPlaying = false; updatePlayUI(); setStatus('❌ 语音失败'); showFallbackText(text); };
+    state.utterance = u;
+    speechSynthesis.speak(u);
+    if (iOS) {
+      var keepAlive = setInterval(function() {
+        if (!state.isPlaying) { clearInterval(keepAlive); return; }
+        speechSynthesis.pause(); speechSynthesis.resume();
+      }, 5000);
+    }
+  } catch(e) {
+    setStatus('❌ 语音不可用');
+    showFallbackText(text);
+  }
+}
+
+function showFallbackText(text) {
+  var ct = $('contentText');
+  if (!ct.querySelector('.tts-fallback')) {
+    var div = document.createElement('div');
+    div.className = 'tts-fallback';
+    div.style.cssText = 'margin-top:8px;padding-top:8px;border-top:1px solid #3d2413;font-size:11px;color:#a08050';
+    div.innerHTML = '💡 语音不可用，试试<a href="#" onclick="copyText()" style="color:#c4a860">复制文字</a>到其他设备朗读';
+    ct.appendChild(div);
+  }
+}
+
+function copyText() {
+  var ct = $('contentText');
+  var t = ct.textContent.replace(/💡.*$/, '').trim();
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(t).then(function() { setStatus('✅ 已复制到剪贴板'); });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = t; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    setStatus('✅ 已复制');
+  }
+}
+
+function stopSpeaking() {
+  speechSynthesis.cancel();
+  if (ttsPlayer) { ttsPlayer.pause(); ttsPlayer = null; }
+  state.isPlaying = false; updatePlayUI();
+  if (state.utterance) { state.utterance.onend = null; state.utterance = null; }
+  setStatus('⏹ 已停止');
+}
+
+function updatePlayUI() {
+  const l = $('playLabel');
+  if (state.isPlaying) {
+    $('btnPlay').classList.add('playing'); l.textContent = '播放中';
+    $('signalLight').className = 'indicator-light playing';
+  } else {
+    $('btnPlay').classList.remove('playing'); l.textContent = '播放';
+    $('signalLight').className = 'indicator-light';
+  }
+}
+
+function setStatus(msg) { $('statusMsg').textContent = msg; }
+
+async function loadYear(year, force) {
+  state.year = year; state.selectedEpisode = null; state.currentContent = null;
+  $('displayYear').textContent = year; $('yearDisplay').textContent = year;
+  $('yearSlider').value = year; $('yearIndicator').textContent = '📻 '+year;
+  $('displayYear').classList.add('loading');
+  $('episodesGrid').innerHTML = 
+    '<div class="episode-card loading"><div class="badge">A</div><div class="card-title">记忆的碎片</div></div>'+
+    '<div class="episode-card loading"><div class="badge">B</div><div class="card-title">记忆的碎片</div></div>'+
+    '<div class="episode-card loading"><div class="badge">C</div><div class="card-title">记忆的碎片</div></div>';
+  $('contentText').innerHTML = '<div class="content-placeholder">⏳ 正在唤醒记忆...</div>';
+  setStatus('⏳ 记忆追溯中……');
+  $('displayStatus').textContent = '记忆追溯中……';
+
+  try {
+    var url = '/api/broadcast?year='+year + (force ? '&force=1' : '');
+    var res = await fetch(url);
+    var d = await res.json();
+    if (d.error) { setStatus('❌ '+d.error); $('displayYear').classList.remove('loading'); return; }
+    
+    state.episodes = d.episodes || [];
+    renderEpisodes(state.episodes);
+    $('displayYear').classList.remove('loading');
+    $('displayStatus').textContent = year+' 年 · '+state.episodes.length+' 期节目';
+    setStatus(d.cached ? '📡 '+state.episodes.length+' 期' : '✨ 已生成');
+    
+    if (state.episodes.length > 0) selectEpisode(state.episodes[0].episode_id);
+  } catch(e) {
+    setStatus('❌ 连接失败'); $('displayYear').classList.remove('loading');
+  }
+}
+
+function renderEpisodes(eps) {
+  const badges = ['A','B','C'];
+  $('episodesGrid').innerHTML = eps.map((ep,i) => 
+    `<div class="episode-card" data-ep="${ep.episode_id}" onclick="selectEpisode('${ep.episode_id}')">
+      <div class="badge">${badges[i]||ep.episode_id.toUpperCase()}</div>
+      <div class="card-title">${ep.title}</div>
+      <div class="card-focus">${ep.focus||''}</div>
+      <div class="card-plays">🎧 ${ep.play_count||0} 次</div>
+    </div>`
+  ).join('');
+}
+
+async function selectEpisode(eid) {
+  state.selectedEpisode = eid;
+  $('episodesGrid').querySelectorAll('.episode-card').forEach(c => 
+    c.classList.toggle('active', c.dataset.ep === eid));
+  try {
+    const res = await fetch(`/api/episode?year=${state.year}&id=${eid}`);
+    const d = await res.json();
+    if (d.error) return;
+    state.currentContent = d.episode.content;
+    renderContent(d.episode.content);
+    $('displayStatus').textContent = `${state.year} · ${d.episode.title}`;
+    setStatus(`📻 ${d.episode.title}`);
+  } catch(e) { setStatus('❌ 加载失败'); }
+}
+
+let audioPlayer = null;
+let ttsPlayer = null;
+let yearLoadTimer = null;
+let abortController = null;
+
+function renderContent(c) {
+  if (!c) { $('contentText').innerHTML = '<div class="content-placeholder">暂无内容</div>'; return; }
+  let h = '';
+  if (c.host) h += '<div style="margin-bottom:4px">'+c.host+'</div>';
+  if (c.news) {
+    for (let i = 0; i < c.news.length; i++) {
+      h += '<span class="news-item">'+c.news[i]+'</span>';
+    }
+  }
+  if (c.music) {
+    h += '<span class="music-item">'+c.music+'</span>';
+  }
+  if (c.closing) h += '<span class="closing-text">'+c.closing+'</span>';
+  $('contentText').innerHTML = h || '<div class="content-placeholder">内容已加载</div>';
+  
+  // Show music bar if musicSearch exists
+  if (c.musicSearch && c.musicSearch.playUrl) {
+    showMusicBar(c.musicSearch.name, c.musicSearch.playUrl);
+  } else {
+    $('musicBar').classList.remove('show');
+  }
+}
+
+function playMusic(url, name) {
+  if (audioPlayer) { audioPlayer.pause(); audioPlayer = null; }
+  var audio = new Audio(url);
+  audio.volume = state.volume;
+  audio.onplay = function() {
+    $('btnMusicPlay').textContent = '⏸ 暂停';
+    $('btnMusicPlay').classList.add('playing');
+    $('musicStatus').textContent = '播放中';
+  };
+  audio.onended = function() {
+    $('btnMusicPlay').textContent = '▶ 播放';
+    $('btnMusicPlay').classList.remove('playing');
+    $('musicStatus').textContent = '播放完毕';
+    audioPlayer = null;
+  };
+  audio.onerror = function() {
+    $('btnMusicPlay').textContent = '▶ 播放';
+    $('btnMusicPlay').classList.remove('playing');
+    $('musicStatus').textContent = '无法播放';
+    audioPlayer = null;
+  };
+  audio.play().catch(function(e) {
+    $('musicStatus').textContent = '播放失败';
+    audioPlayer = null;
+  });
+  audioPlayer = audio;
+}
+
+function stopMusic() {
+  if (audioPlayer) {
+    audioPlayer.pause();
+    audioPlayer = null;
+  }
+  $('btnMusicPlay').textContent = '▶ 播放';
+  $('btnMusicPlay').classList.remove('playing');
+  $('musicStatus').textContent = '已停止';
+}
+
+function toggleMusic() {
+  if (audioPlayer && !audioPlayer.paused) {
+    audioPlayer.pause();
+    $('btnMusicPlay').textContent = '▶ 继续';
+    $('musicStatus').textContent = '已暂停';
+  } else if (audioPlayer && audioPlayer.paused) {
+    audioPlayer.play();
+    $('btnMusicPlay').textContent = '⏸ 暂停';
+    $('musicStatus').textContent = '播放中';
+  } else {
+    // No current audio - play from selected content
+    playCurrentMusic();
+  }
+}
+
+function playCurrentMusic() {
+  if (!state.currentContent || !state.currentContent.musicSearch) return;
+  var ms = state.currentContent.musicSearch;
+  showMusicBar(ms.name, ms.playUrl);
+  playMusic(ms.playUrl, ms.name);
+}
+
+function showMusicBar(name, url) {
+  $('musicName').textContent = '《'+name+'》';
+  $('musicBar').classList.add('show');
+}
+
+$('yearSlider').addEventListener('input', function() {
+  var y = parseInt(this.value);
+  $('displayYear').textContent = y;
+  $('yearDisplay').textContent = y;
+  $('yearIndicator').textContent = '📻 '+y;
+  state.year = y;
+  // NO loading on input - only visual update
+});
+$('yearSlider').addEventListener('change', function() {
+  loadYear(parseInt(this.value));
+});
+$('yearSlider').addEventListener('touchend', function() {
+  // Mobile: ensure load happens on finger lift
+  loadYear(parseInt(this.value));
+});
+
+$('btnPrev').addEventListener('click', function() {
+  var y = Math.max(1950, state.year-1);
+  $('yearSlider').value = y;
+  $('yearDisplay').textContent = y;
+  $('displayYear').textContent = y;
+  $('yearIndicator').textContent = '📻 '+y;
+  state.year = y;
+  loadYear(y);
+});
+$('btnNext').addEventListener('click', function() {
+  if (yearLoadTimer) { clearTimeout(yearLoadTimer); yearLoadTimer = null; }
+  var y = Math.min(2025, state.year+1);
+  $('yearSlider').value = y;
+  $('yearDisplay').textContent = y;
+  $('displayYear').textContent = y;
+  $('yearIndicator').textContent = '📻 '+y;
+  state.year = y;
+  loadYear(y);
+});
+
+$('btnPlay').addEventListener('click', () => {
+  if (state.isPlaying) { stopSpeaking(); return; }
+  if (state.currentContent && state.currentContent.fullScript) {
+    speak(state.currentContent.fullScript);
+  } else if (state.selectedEpisode) {
+    selectEpisode(state.selectedEpisode).then(() => {
+      if (state.currentContent && state.currentContent.fullScript)
+        speak(state.currentContent.fullScript);
+    });
+  }
+});
+$('btnStop').addEventListener('click', stopSpeaking);
+
+$('btnGenerate').addEventListener('click', async function() {
+  if (state.isGenerating) return;
+  state.isGenerating = true;
+  this.disabled = true;
+  this.textContent = '⏳ 记忆追溯中……';
+  stopSpeaking();
+  // Add ?force=1 to bypass cache
+  await loadYear(state.year, true);
+  state.isGenerating = false;
+  this.disabled = false;
+  this.innerHTML = '<span class="btn-icon">⟳</span> 重新生成';
+});
+
+$('volumeSlider').addEventListener('input', function() {
+  state.volume = parseFloat($('volumeSlider').value);
+  if (state.utterance) state.utterance.volume = state.volume;
+  if (ttsPlayer) ttsPlayer.volume = state.volume;
+  if (audioPlayer) audioPlayer.volume = state.volume;
+});
+
+// Music controls
+$('btnMusicPlay').addEventListener('click', toggleMusic);
+$('btnMusicStop').addEventListener('click', stopMusic);
+
+document.addEventListener('keydown', e => {
+  if (e.key===' '||e.key==='Space') { e.preventDefault(); $('btnPlay').click(); }
+  if (e.key==='ArrowLeft') $('btnPrev').click();
+  if (e.key==='ArrowRight') $('btnNext').click();
+});
+
+if (speechSynthesis.onvoiceschanged !== undefined)
+  speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
+speechSynthesis.getVoices();
+
+document.addEventListener('click', function() {
+  // Create audio context on first click to unlock audio
+  if (!window.audioCtx) {
+    try {
+      window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch(e) {}
+  }
+  if (window.audioCtx && window.audioCtx.state === 'suspended') {
+    window.audioCtx.resume();
+  }
+}, { once: false });
+
+$('powerLight').classList.add('on');
+loadYear(1960);
+</script>
+</body>
+</html>

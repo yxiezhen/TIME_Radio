@@ -1,0 +1,8 @@
+node_modules/
+.env
+broadcasts.db
+cache/
+cache_backup/
+server.log
+pregen-*.txt
+pregen.log

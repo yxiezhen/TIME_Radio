@@ -1,0 +1,17 @@
+{
+  "name": "radio-time-machine",
+  "version": "1.0.0",
+  "description": "网页版 RADIO TIME MACHINE - AI 时光广播机",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "pregen": "node pregen.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^4.18.2",
+    "NeteaseCloudMusicApi": "^4.32.0",
+    "sql.js": "^1.14.1"
+  }
+}
