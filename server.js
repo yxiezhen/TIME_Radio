@@ -13,6 +13,9 @@ const DB_PATH = path.join(__dirname, 'broadcasts.db');
 // LLM 配置:MiMo 开放平台 + DeepSeek 兜底
 const MIMO_API_KEY = process.env.MIMO_API_KEY;
 const DEEPSEEK_KEY = process.env.DEEPSEEK_KEY || '';
+const MUSIC_U = process.env.MUSIC_U || '';
+const NETEASE_CSRF = process.env.NETEASE_CSRF || '';
+const UNBLOCK_URL = process.env.UNBLOCK_URL || 'http://unblock-music:3002';
 
 // MiMo (api.xiaomimimo.com)
 const MIMO_BASE = 'https://api.xiaomimimo.com/v1';
@@ -543,6 +546,58 @@ app.get('/api/music/proxy', async (req, res) => {
         }
       }
     } catch (e) { /* fall through */ }
+  }
+
+  // Try 3: Netease VIP API with cookie
+  if (id && MUSIC_U && NETEASE_CSRF) {
+    try {
+      const cookieStr = `MUSIC_U=${MUSIC_U}; __csrf=${NETEASE_CSRF}`;
+      const vipRes = await fetch('https://music.163.com/api/song/enhance/player/url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Referer': 'https://music.163.com/',
+          'Cookie': cookieStr
+        },
+        body: `ids=[${id}]&br=320000`
+      });
+      const vipData = await vipRes.json();
+      const realUrl = vipData?.data?.[0]?.url;
+      if (realUrl) {
+        const vipBufRes = await fetch(realUrl);
+        if (vipBufRes.ok) {
+          const buf = Buffer.from(await vipBufRes.arrayBuffer());
+          if (buf.length > 10000) {
+            res.set('Content-Type', 'audio/mpeg');
+            res.set('Access-Control-Allow-Origin', '*');
+            return res.send(buf);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('VIP API 失败:', e.message);
+    }
+  }
+
+  // Try 4: UnblockNeteaseMusic (no VIP needed)
+  if (id) {
+    try {
+      const unblockRes = await fetch(`${UNBLOCK_URL}/match?id=${id}&source=unm`);
+      const unblockData = await unblockRes.json();
+      if (unblockData?.code === 200 && unblockData?.data?.url) {
+        const unblockBufRes = await fetch(unblockData.data.url);
+        if (unblockBufRes.ok) {
+          const buf = Buffer.from(await unblockBufRes.arrayBuffer());
+          if (buf.length > 10000) {
+            res.set('Content-Type', 'audio/mpeg');
+            res.set('Access-Control-Allow-Origin', '*');
+            return res.send(buf);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Unblock 失败:', e.message);
+    }
   }
 
   res.status(403).json({ error: 'vip', message: '该歌曲需要VIP或暂不可用' });

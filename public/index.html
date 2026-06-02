@@ -511,41 +511,32 @@ function playMusic(url, name) {
   // Append song name for fallback search
   var playUrl = url + '&q=' + encodeURIComponent(name);
   
-  // First check if the song is playable
-  fetch(playUrl, { method: 'HEAD' }).then(function(r) {
-    if (!r.ok) {
-      $('musicStatus').textContent = r.status === 403 ? '⚠️ 需VIP' : '⚠️ 无法播放';
-      return;
-    }
-    var audio = new Audio(playUrl);
-    audio.volume = state.volume;
-    audio.onplay = function() {
-      $('btnMusicPlay').textContent = '⏸ 暂停';
-      $('btnMusicPlay').classList.add('playing');
-      $('musicStatus').textContent = '播放中';
-    };
-    audio.onended = function() {
-      $('btnMusicPlay').textContent = '▶ 播放';
-      $('btnMusicPlay').classList.remove('playing');
-      $('musicStatus').textContent = '播放完毕';
-      audioPlayer = null;
-    };
-    audio.onerror = function() {
-      $('musicStatus').textContent = '⚠️ 无法播放';
-      $('btnMusicPlay').textContent = '▶ 播放';
-      $('btnMusicPlay').classList.remove('playing');
-      audioPlayer = null;
-    };
-    audio.play().catch(function() {
-      $('musicStatus').textContent = '⚠️ 需要VIP';
-      $('btnMusicPlay').textContent = '▶ 播放';
-      $('btnMusicPlay').classList.remove('playing');
-      audioPlayer = null;
-    });
-    audioPlayer = audio;
-  }).catch(function() {
+  var audio = new Audio(playUrl);
+  audio.volume = state.volume;
+  audio.onplay = function() {
+    $('btnMusicPlay').textContent = '⏸ 暂停';
+    $('btnMusicPlay').classList.add('playing');
+    $('musicStatus').textContent = '播放中';
+  };
+  audio.onended = function() {
+    $('btnMusicPlay').textContent = '▶ 播放';
+    $('btnMusicPlay').classList.remove('playing');
+    $('musicStatus').textContent = '播放完毕';
+    audioPlayer = null;
+  };
+  audio.onerror = function() {
     $('musicStatus').textContent = '⚠️ 无法播放';
+    $('btnMusicPlay').textContent = '▶ 播放';
+    $('btnMusicPlay').classList.remove('playing');
+    audioPlayer = null;
+  };
+  audio.play().catch(function() {
+    $('musicStatus').textContent = '⚠️ 需要VIP';
+    $('btnMusicPlay').textContent = '▶ 播放';
+    $('btnMusicPlay').classList.remove('playing');
+    audioPlayer = null;
   });
+  audioPlayer = audio;
 }
 
 function stopMusic() {
