@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   unblock-music:
-    build: ../unblock-music
+    build: ./unblock-music
     container_name: unblock-music
     restart: unless-stopped
     networks:
