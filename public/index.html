@@ -209,18 +209,114 @@ function buildGrille() {
 }
 buildGrille();
 
-function speak(text) {
+// 链式播放状态 + 并行预加载缓存
+var ttsChain = { parts: [], index: 0, stopped: false, cache: {} };
+
+function speakSectioned(content) {
   stopSpeaking();
-  if (!text || text.length < 10) { setStatus('❌ 没有可播放的内容'); return; }
-  
-  var clean = text.replace(/[*【】\[\]]/g, '');
+
+  // 分段：开场白 + 新闻串联 + 音乐+收尾
+  var parts = [];
+  if (content.host) parts.push(content.host.replace(/[*【】\[\]]/g, ''));
+  if (content.news && content.news.length > 0) {
+    parts.push(content.news.join('。'));
+  }
+  var finalPart = '';
+  if (content.music) finalPart += content.music;
+  if (content.closing) {
+    if (finalPart) finalPart += '。';
+    finalPart += content.closing;
+  }
+  if (finalPart) parts.push(finalPart);
+
+  // 兜底：如果没分出段，回退到整段朗读
+  if (parts.length === 0) {
+    if (content.fullScript) {
+      serverTTS(content.fullScript.replace(/[*【】\[\]]/g, ''));
+    } else {
+      setStatus('❌ 没有可播放的内容');
+    }
+    return;
+  }
+
+  ttsChain = { parts: parts, index: 0, stopped: false, cache: {} };
   setStatus('🔊 正在合成语音...');
-  
-  // Try server-side TTS first
-  serverTTS(clean);
+
+  // 同时预加载所有段！到达后自动缓存
+  for (var i = 0; i < parts.length; i++) {
+    prefetchPart(i);
+  }
+
+  // 等第一段就绪了就启动播放链
+  (function waitFirst() {
+    if (ttsChain.stopped) return;
+    if (ttsChain.cache[0] && ttsChain.cache[0].url) {
+      playNextPart();
+    } else {
+      setTimeout(waitFirst, 80);
+    }
+  })();
 }
 
-function serverTTS(text) {
+function prefetchPart(partIdx) {
+  if (ttsChain.stopped || partIdx >= ttsChain.parts.length) return;
+  var text = ttsChain.parts[partIdx];
+  fetch('/api/tts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: text })
+  })
+  .then(function(r) { if (!r.ok) throw new Error(); return r.blob(); })
+  .then(function(blob) {
+    if (!ttsChain.stopped) {
+      ttsChain.cache[partIdx] = { url: URL.createObjectURL(blob), text: text };
+    }
+  })
+  .catch(function() { /* 预加载失败没关系，后面的 playNextPart 会重新请求 */ });
+}
+
+function playNextPart() {
+  if (ttsChain.stopped) return;
+  var idx = ttsChain.index;
+  ttsChain.index++;
+  if (idx >= ttsChain.parts.length) {
+    state.isPlaying = false;
+    updatePlayUI();
+    ttsPlayer = null;
+    setStatus('✅ 播放完毕');
+    return;
+  }
+  var cached = ttsChain.cache[idx];
+  if (cached && cached.url) {
+    playAudioTTS(cached.url, cached.text, playNextPart);
+  } else {
+    // 缓存没命中（极少情况），现场拉
+    serverTTS(ttsChain.parts[idx], playNextPart, playNextPart);
+  }
+}
+
+function playAudioTTS(url, fallbackText, onDone) {
+  if (ttsChain.stopped) { onDone(); return; }
+  if (ttsPlayer) { ttsPlayer.pause(); ttsPlayer = null; }
+  var audio = new Audio(url);
+  audio.volume = state.volume;
+  audio.onplay = function() { state.isPlaying = true; updatePlayUI(); setStatus('🔊 广播中...'); };
+  audio.onended = function() { state.isPlaying = false; updatePlayUI(); onDone(); };
+  audio.onerror = function() {
+    state.isPlaying = false; updatePlayUI();
+    browserTTS(fallbackText, onDone, onDone);
+  };
+  ttsPlayer = audio;
+  var pp = audio.play();
+  if (pp !== undefined) pp.catch(function() { browserTTS(fallbackText, onDone, onDone); });
+}
+
+function serverTTS(text, onDone, onError) {
+  if (!onDone) onDone = function() {};
+  if (!onError) onError = function() {};
+
+  if (ttsChain.stopped) { onDone(); return; }
+
   // Stop any existing audio
   if (ttsPlayer) { ttsPlayer.pause(); ttsPlayer = null; }
   
@@ -243,6 +339,7 @@ function serverTTS(text) {
     return res.blob();
   })
   .then(function(blob) {
+    if (ttsChain.stopped) { onDone(); return; }
     var url = URL.createObjectURL(blob);
     var audio = new Audio(url);
     audio.volume = state.volume;
@@ -255,16 +352,16 @@ function serverTTS(text) {
     audio.onended = function() {
       state.isPlaying = false;
       updatePlayUI();
-      setStatus('✅ 播放完毕');
       URL.revokeObjectURL(url);
+      onDone();
     };
     audio.onerror = function(e) {
       console.warn('Audio error:', e.message || 'unknown');
       state.isPlaying = false;
       updatePlayUI();
       URL.revokeObjectURL(url);
-      // Fall back to browser TTS
-      browserTTS(text);
+      // Fall back to browser TTS for this segment
+      browserTTS(text, onDone, onError);
     };
     
     ttsPlayer = audio;
@@ -274,21 +371,27 @@ function serverTTS(text) {
       playPromise.catch(function(err) {
         setStatus('⚠️ 播放失败，试试浏览器语音');
         console.error('TTS audio play error:', err);
-        browserTTS(text);
+        browserTTS(text, onDone, onError);
       });
     }
   })
   .catch(function(err) {
     setStatus('⚠️ 服务器语音暂不可用，使用浏览器语音');
     console.error('TTS server error:', err);
-    browserTTS(text);
+    browserTTS(text, onDone, onError);
   });
 }
 
-function browserTTS(text) {
+function browserTTS(text, onDone, onError) {
+  if (!onDone) onDone = function() {};
+  if (!onError) onError = function() {};
+
+  if (ttsChain.stopped) { onDone(); return; }
+
   if (!window.speechSynthesis) {
     setStatus('❌ 语音不可用');
     showFallbackText(text);
+    onError();
     return;
   }
   try {
@@ -299,8 +402,8 @@ function browserTTS(text) {
     if (zh) u.voice = zh;
     var iOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     u.onstart = function() { state.isPlaying = true; updatePlayUI(); setStatus('🔊 浏览器语音中...'); };
-    u.onend = function() { state.isPlaying = false; updatePlayUI(); setStatus('✅ 播放完毕'); };
-    u.onerror = function() { state.isPlaying = false; updatePlayUI(); setStatus('❌ 语音失败'); showFallbackText(text); };
+    u.onend = function() { state.isPlaying = false; updatePlayUI(); onDone(); };
+    u.onerror = function() { state.isPlaying = false; updatePlayUI(); setStatus('❌ 语音失败'); showFallbackText(text); onError(); };
     state.utterance = u;
     speechSynthesis.speak(u);
     if (iOS) {
@@ -312,6 +415,7 @@ function browserTTS(text) {
   } catch(e) {
     setStatus('❌ 语音不可用');
     showFallbackText(text);
+    onError();
   }
 }
 
@@ -340,8 +444,15 @@ function copyText() {
 }
 
 function stopSpeaking() {
+  ttsChain.stopped = true;
   speechSynthesis.cancel();
   if (ttsPlayer) { ttsPlayer.pause(); ttsPlayer = null; }
+  // 清理预加载缓存
+  for (var k in ttsChain.cache) {
+    if (ttsChain.cache[k] && ttsChain.cache[k].url)
+      URL.revokeObjectURL(ttsChain.cache[k].url);
+  }
+  ttsChain.cache = {};
   state.isPlaying = false; updatePlayUI();
   if (state.utterance) { state.utterance.onend = null; state.utterance = null; }
   setStatus('⏹ 已停止');
@@ -616,12 +727,12 @@ $('btnNext').addEventListener('click', function() {
 
 $('btnPlay').addEventListener('click', () => {
   if (state.isPlaying) { stopSpeaking(); return; }
-  if (state.currentContent && state.currentContent.fullScript) {
-    speak(state.currentContent.fullScript);
+  if (state.currentContent) {
+    speakSectioned(state.currentContent);
   } else if (state.selectedEpisode) {
     selectEpisode(state.selectedEpisode).then(() => {
-      if (state.currentContent && state.currentContent.fullScript)
-        speak(state.currentContent.fullScript);
+      if (state.currentContent)
+        speakSectioned(state.currentContent);
     });
   }
 });
